@@ -2,3 +2,5 @@ target/
 build/
 .secrets
 *.txt
+BUILD_PLAN.md
+Plan.md

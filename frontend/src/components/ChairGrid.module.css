@@ -1,0 +1,188 @@
+.gridContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.circleGrid {
+  position: relative;
+  width: 380px;
+  height: 380px;
+}
+
+/* Position 12 chairs in a circle */
+.chair {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(20, 20, 40, 0.8);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+  gap: 0;
+}
+
+.chair:hover:not(:disabled) {
+  transform: scale(1.15);
+  border-color: rgba(100, 200, 255, 0.6);
+  box-shadow: 0 0 20px rgba(100, 200, 255, 0.3);
+}
+
+.chair:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+
+/* Circle positions (12 items, 30° apart) */
+/* center = 190px, radius = 150px */
+.chair1  { left: 328px; top: 153px; } /* 0°  → right */
+.chair2  { left: 303px; top: 78px;  } /* 30° */
+.chair3  { left: 240px; top: 20px;  } /* 60° */
+.chair4  { left: 158px; top: 0px;   } /* 90° → top */
+.chair5  { left: 78px;  top: 20px;  } /* 120° */
+.chair6  { left: 18px;  top: 78px;  } /* 150° */
+.chair7  { left: -5px;  top: 153px; } /* 180° → left */
+.chair8  { left: 18px;  top: 230px; } /* 210° */
+.chair9  { left: 78px;  top: 295px; } /* 240° */
+.chair10 { left: 158px; top: 316px; } /* 270° → bottom */
+.chair11 { left: 240px; top: 295px; } /* 300° */
+.chair12 { left: 303px; top: 230px; } /* 330° */
+
+/* States */
+.state-selected {
+  border-color: #ffd700;
+  background: rgba(255, 215, 0, 0.2);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.4), inset 0 0 10px rgba(255, 215, 0, 0.1);
+}
+
+.state-trapped {
+  border-color: #ff4444;
+  background: rgba(255, 68, 68, 0.15);
+  box-shadow: 0 0 15px rgba(255, 68, 68, 0.3);
+}
+
+.state-eliminated {
+  border-color: #ff0000;
+  background: rgba(255, 0, 0, 0.3);
+  box-shadow: 0 0 25px rgba(255, 0, 0, 0.5);
+  animation: shake 0.5s ease-in-out;
+}
+
+.state-trapped-opponent {
+  border-color: #ff6600;
+  background: rgba(255, 102, 0, 0.25);
+  box-shadow: 0 0 25px rgba(255, 102, 0, 0.5);
+  animation: explode 0.6s ease-out;
+}
+
+.state-my-position-safe {
+  border-color: #00ff88;
+  background: rgba(0, 255, 136, 0.2);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+}
+
+.state-opp-position-safe {
+  border-color: #00aaff;
+  background: rgba(0, 170, 255, 0.15);
+  box-shadow: 0 0 15px rgba(0, 170, 255, 0.3);
+}
+
+.state-my-trap-revealed {
+  border-color: rgba(255, 68, 68, 0.5);
+  background: rgba(255, 68, 68, 0.1);
+}
+
+.state-opp-trap-revealed {
+  border-color: rgba(255, 100, 100, 0.4);
+  background: rgba(255, 100, 100, 0.08);
+}
+
+.state-hidden {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 30, 60, 0.6);
+}
+
+.state-empty-revealed {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(30, 30, 60, 0.4);
+}
+
+.emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.number {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.risk {
+  font-size: 0.5rem;
+  color: rgba(255, 215, 0, 0.8);
+  font-weight: 600;
+}
+
+.centerLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.centerEmoji {
+  font-size: 2rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.centerText {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+.instructions {
+  font-size: 0.85rem;
+  color: rgba(200, 220, 255, 0.8);
+  text-align: center;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Animations */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes explode {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}

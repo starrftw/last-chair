@@ -1,0 +1,75 @@
+.container {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.barTrack {
+    flex: 1;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    position: relative;
+    overflow: visible;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.barFill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #4ecdc4, #ffd700, #ff6b9d);
+    transition: width 0.05s linear;
+    box-shadow: 0 0 10px rgba(78, 205, 196, 0.4);
+}
+
+.noteMarker {
+    position: absolute;
+    top: -22px;
+    transform: translateX(-50%);
+    font-size: 1.2rem;
+    animation: bounce 0.4s ease-in-out infinite alternate;
+    filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.5));
+}
+
+.timer {
+    min-width: 45px;
+    text-align: right;
+}
+
+.time {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: var(--font-mono);
+    transition: color 0.3s;
+}
+
+.time.urgent {
+    color: #ff4444;
+    animation: flashRed 0.5s ease-in-out infinite;
+}
+
+@keyframes bounce {
+    from {
+        transform: translateX(-50%) translateY(0);
+    }
+
+    to {
+        transform: translateX(-50%) translateY(-6px);
+    }
+}
+
+@keyframes flashRed {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}

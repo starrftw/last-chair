@@ -13,7 +13,7 @@ import MatchResult from './MatchResult';
 import styles from './GameFlow.module.css';
 
 // Game phases
-export type GamePhase = 
+export type GamePhase =
   | 'lobby'
   | 'chair_selection'
   | 'waiting_commitment'
@@ -29,7 +29,7 @@ const DEFAULT_BET_AMOUNT = '10'; // STRK in wei (10 = 10 STRK)
 
 export default function GameFlow({ initialMatchId }: GameFlowProps) {
   const { account, isConnected, isSepolia } = useWallet();
-  
+
   // Game state
   const [phase, setPhase] = useState<GamePhase>('lobby');
   const [matchId, setMatchId] = useState<string>(initialMatchId || '');
@@ -37,26 +37,26 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
   const [currentRound, setCurrentRound] = useState(1);
   const [roundResults, setRoundResults] = useState<RoundResult[]>([]);
   const [potAmount] = useState(10); // STRK
-  
+
   // Player choices
   const [playerChoices, setPlayerChoices] = useState<PlayerChoices>({
     position: null,
     traps: [],
   });
-  
+
   // Opponent state
   const [opponentLocked, setOpponentLocked] = useState(false);
-  
+
   // Loading and error states
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Proof state
   const [proofResult, setProofResult] = useState<ProofResult | null>(null);
-  
+
   // Prover initialization
   const [proverReady, setProverReady] = useState(false);
-  
+
   // Polling interval ref
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -77,14 +77,14 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
   // Check opponent commitment on contract
   const checkOpponentCommitment = useCallback(async () => {
     if (!account || !matchId) return;
-    
+
     try {
-      const contract = getGameContract(account);
+      const contract = getGameContract(wallet?.account);
       const matchData = await contract.get_match(matchId);
-      
+
       // matchData is tuple: (player_a, player_b, bet_amount, round_number, score_a, score_b)
       const [, , , roundNumber] = matchData;
-      
+
       // If round number has incremented past current round, opponent has committed
       if (Number(roundNumber) > currentRound) {
         setOpponentLocked(true);
@@ -100,7 +100,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
       pollRef.current = setInterval(async () => {
         await checkOpponentCommitment();
       }, 3000);
-      
+
       return () => {
         if (pollRef.current) clearInterval(pollRef.current);
       };
@@ -109,27 +109,21 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
 
   // ── Contract Actions ──
 
+  // At top of component, get wallet from context
+  const { wallet } = useWallet();
+
   const handleCreateMatch = useCallback(async () => {
-    if (!account) {
+    if (!wallet?.account) {
       setError('Wallet not connected');
       return;
     }
-
     setIsLoading(true);
     setError(null);
-
     try {
-      const contract = getGameContract(account);
-      const betAmountWei = BigInt(DEFAULT_BET_AMOUNT).toString();
-      
-      const tx = await contract.create_match(betAmountWei);
+      const contract = getGameContract(wallet.account);
+      const tx = await contract.create_match(DEFAULT_BET_AMOUNT.toString());
       console.log('Create match tx:', tx);
-      
-      // Extract match ID from transaction
-      const newMatchId = tx.transaction_hash 
-        ? BigInt('0x' + tx.transaction_hash.slice(0, 16)).toString()
-        : Date.now().toString();
-      
+      const newMatchId = Date.now().toString(); // temp until we parse events
       setMatchId(newMatchId);
       setPlayerRole('a');
       setPhase('chair_selection');
@@ -139,7 +133,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [account]);
+  }, [wallet]);
 
   const handleJoinMatch = useCallback(async (inputMatchId: string) => {
     if (!account) {
@@ -151,12 +145,12 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
     setError(null);
 
     try {
-      const contract = getGameContract(account);
+      const contract = getGameContract(wallet?.account);
       const matchIdFelt = BigInt(inputMatchId).toString();
-      
+
       const tx = await contract.join_match(matchIdFelt);
       console.log('Join match tx:', tx);
-      
+
       setMatchId(inputMatchId);
       setPlayerRole('b');
       setPhase('chair_selection');
@@ -173,11 +167,11 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
     if (!account || !matchId || !playerChoices.position) return;
 
     setPhase('waiting_commitment');
-    
+
     // In a real game, the opponent would also commit via their own wallet
     // For demo, we simulate by checking contract after a delay
     setOpponentLocked(true);
-    
+
     // Short delay then move to reveal
     setTimeout(() => {
       setPhase('reveal');
@@ -193,7 +187,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
 
   // Handle reveal phase complete
   const handleRevealComplete = useCallback(async (
-    revealedChoices: PlayerChoices, 
+    revealedChoices: PlayerChoices,
     proof: ProofResult
   ) => {
     setProofResult(proof);
@@ -225,7 +219,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
   const resolveRoundLocally = useCallback(async (opponentChoicesParam?: PlayerChoices) => {
     // Generate opponent choices if not provided (demo mode)
     let oppChoices: PlayerChoices;
-    
+
     if (opponentChoicesParam) {
       oppChoices = opponentChoicesParam;
     } else {
@@ -233,21 +227,21 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
       const position = generateOpponentPosition(traps);
       oppChoices = { position, traps };
     }
-    
+
     // If player is A, their choices go to playerA
     // If player is B, their choices go to playerB, and we generate A's choices
     const playerAChoices = playerRole === 'a' ? playerChoices : oppChoices;
     const playerBChoices = playerRole === 'b' ? playerChoices : oppChoices;
-    
+
     const result = resolveRound(playerAChoices, playerBChoices);
-    
+
     // Add opponent's actual traps to result for display
     const displayResult: RoundResult = {
       ...result,
       playerAChoices,
       playerBChoices,
     };
-    
+
     setRoundResults(prev => [...prev, displayResult]);
     setPhase('round_result');
   }, [playerChoices, playerRole]);
@@ -300,7 +294,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
           </div>
         ) : (
           <div className={styles.gameOptions}>
-            <button 
+            <button
               className={styles.createButton}
               onClick={handleCreateMatch}
               disabled={isLoading}
@@ -319,7 +313,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
                 value={matchId}
                 onChange={(e) => setMatchId(e.target.value)}
               />
-              <button 
+              <button
                 className={styles.joinButton}
                 onClick={() => handleJoinMatch(matchId)}
                 disabled={isLoading || !matchId}
@@ -369,7 +363,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
         <h2>Waiting for Opponent</h2>
         <p>Match ID: {matchId.slice(0, 8)}...</p>
         <p>Round {currentRound}/3</p>
-        
+
         <div className={styles.statusBadges}>
           <span className={styles.myBadge}>✓ You committed</span>
           <span className={`${styles.opponentBadge} ${opponentLocked ? styles.ready : ''}`}>
@@ -397,7 +391,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
   // Render round result
   if (phase === 'round_result') {
     const latestResult = roundResults[roundResults.length - 1];
-    
+
     return (
       <RoundResultView
         roundNumber={currentRound}
@@ -413,7 +407,7 @@ export default function GameFlow({ initialMatchId }: GameFlowProps) {
   // Render match result
   if (phase === 'match_result') {
     const finalSplit = settleMatch(roundResults);
-    
+
     return (
       <MatchResult
         roundResults={roundResults}

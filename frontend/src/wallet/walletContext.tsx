@@ -1,30 +1,51 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { Account } from "starknet";
-import { connect as connectWallet, disconnect as disconnectStarknet, StarknetWindowObject } from "get-starknet";
+import { Account, RpcProvider } from "starknet";
+import { connect as connectWallet, disconnect as disconnectStarknet } from "get-starknet";
 
+const SEPOLIA_RPC_URL = process.env.NEXT_PUBLIC_STARKNET_RPC_URL || "https://free-rpc.nethermind.io/sepolia-juno";
+const DEFAULT_SEPOLIA_CHAIN_ID = process.env.NEXT_PUBLIC_SEPOLIA_CHAIN_ID || "0x534e5f5345504f4c4941";
 export const GAME_CONTRACT_ADDRESS = "0x00bf98bcca019014ea239db24ec63016b266df3e5e1041946147b66d9d9887eb";
 
-// Extended wallet type after enable() is called
-interface EnabledWallet {
-  isConnected: boolean;
-  account: Account;
-  selectedAddress: string;
-  chainId: string;
-  request: (options: { method: string; params?: unknown[] | object }) => Promise<unknown>;
+// Valid Sepolia chain IDs - handle different formats wallets may return
+const SEPOLIA_CHAIN_IDS = [
+  "SN_SEPOLIA",
+  DEFAULT_SEPOLIA_CHAIN_ID, // hex for "SN_SEPOLIA"
+];
+
+/**
+ * Check if chainId is Sepolia (handles different formats)
+ */
+function isSepoliaNetwork(chainId: string | null): boolean {
+  if (!chainId) return false;
+  
+  // Normalize: if it's a hex string, convert to uppercase for comparison
+  const normalizedChainId = chainId.toUpperCase();
+  const normalizedSepolia = "SN_SEPOLIA".toUpperCase();
+  const normalizedHex = DEFAULT_SEPOLIA_CHAIN_ID.toUpperCase();
+  
+  // Direct comparison
+  if (SEPOLIA_CHAIN_IDS.includes(chainId)) return true;
+  
+  // Case-insensitive comparison
+  if (normalizedChainId === normalizedSepolia || normalizedChainId === normalizedHex) return true;
+  
+  // Check if it starts with SN_SEPOLIA
+  if (normalizedChainId.startsWith("SN_SEPOLIA")) return true;
+  
+  return false;
 }
 
-export interface WalletState {
-  starknet: EnabledWallet | null;
-  account: Account | null;
+interface WalletContextType {
+  wallet: any | null;
+  account: any | null;
+  provider: RpcProvider | null;
   address: string | null;
   isConnected: boolean;
   isConnecting: boolean;
   chainId: string | null;
-}
-
-interface WalletContextType extends WalletState {
+  isSepolia: boolean;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   switchToSepolia: () => Promise<void>;
@@ -33,56 +54,56 @@ interface WalletContextType extends WalletState {
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const [starknet, setStarknet] = useState<EnabledWallet | null>(null);
-  const [account, setAccount] = useState<Account | null>(null);
+  const [wallet, setWallet] = useState<any | null>(null);
+  const [account, setAccount] = useState<any | null>(null);
+  const [provider, setProvider] = useState<RpcProvider | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [chainId, setChainId] = useState<string | null>(null);
 
-  // NO silent connect on mount — user connects when they want to
-
   const connect = useCallback(async () => {
     setIsConnecting(true);
     try {
-      // get-starknet v4: connect() returns the wallet object
-      const wallet = await connectWallet({
+      const starknetWallet = await connectWallet({
         modalMode: "alwaysAsk",
         modalTheme: "dark",
       });
 
-      if (!wallet) {
-        throw new Error("No wallet selected");
+      if (!starknetWallet) throw new Error("No wallet selected");
+
+      await starknetWallet.enable();
+
+      // Get account from enabled wallet - this is the Account instance needed for contract calls
+      const walletAccount = (starknetWallet as any).account;
+      if (!walletAccount) throw new Error("No account returned from wallet");
+
+      const addr = starknetWallet.selectedAddress;
+      if (!addr) throw new Error("No address returned from wallet");
+
+      // Request chain ID explicitly - wallets don't always expose it on the object
+      let currentChainId: string | null = null;
+      try {
+        currentChainId = await starknetWallet.request({ type: "starknet_chainId" }) as string;
+      } catch (_) {
+        // fallback: assume sepolia if we can't get chain id
+        currentChainId = DEFAULT_SEPOLIA_CHAIN_ID;
       }
 
-      // Type assert to access enable method (get-starknet types are incomplete)
-      const walletWithEnable = wallet as unknown as { enable: (options: { starknetVersion: string }) => Promise<{ [key: string]: unknown }> };
-      
-      // Enable the wallet to get accounts - this enhances the wallet object
-      await walletWithEnable.enable({ starknetVersion: "v5" });
-      
-      // After enable(), the wallet has the expected properties
-      const enabledWallet = wallet as unknown as EnabledWallet;
+      console.log("Chain ID:", currentChainId);
 
-      if (!enabledWallet.isConnected || !enabledWallet.account) {
-        throw new Error("Wallet connection failed");
-      }
+      const rpcProvider = new RpcProvider({ nodeUrl: SEPOLIA_RPC_URL });
 
-      // Store the starknet wallet object directly
-      // The wallet.account is already an Account instance from starknet.js
-      const walletAddress = enabledWallet.selectedAddress ?? null;
-      const walletChainId = enabledWallet.chainId ?? null;
-      const walletAccount = enabledWallet.account;
-
-      setStarknet(enabledWallet);
+      setWallet(starknetWallet);
       setAccount(walletAccount);
-      setAddress(walletAddress);
-      setChainId(walletChainId);
+      setProvider(rpcProvider);
+      setAddress(addr);
+      setChainId(currentChainId);
       setIsConnected(true);
 
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("User abort") || msg.includes("cancel") || msg.includes("rejected")) {
+      if (msg.includes("User abort") || msg.includes("cancel") || msg.includes("rejected") || msg.includes("closed")) {
         throw new Error("Connection cancelled");
       }
       throw error;
@@ -91,39 +112,37 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const switchToSepolia = useCallback(async () => {
+    if (!wallet) return;
+    try {
+      await wallet.request({
+        type: "wallet_switchStarknetChain",
+        params: { chainId: DEFAULT_SEPOLIA_CHAIN_ID },
+      });
+      setChainId(DEFAULT_SEPOLIA_CHAIN_ID);
+    } catch (e) {
+      console.error("Failed to switch network:", e);
+    }
+  }, [wallet]);
+
   const disconnect = useCallback(async () => {
     try {
       await disconnectStarknet({ clearLastWallet: true });
-    } catch (_) {}
-    setStarknet(null);
+    } catch (_) { }
+    setWallet(null);
     setAccount(null);
+    setProvider(null);
     setAddress(null);
     setIsConnected(false);
     setChainId(null);
   }, []);
 
-  const switchToSepolia = useCallback(async () => {
-    if (!starknet) {
-      throw new Error("Wallet not connected");
-    }
-    try {
-      // Request chain switch to Sepolia
-      await starknet.request({
-        method: "wallet_switchStarknetChain",
-        params: [{ chainId: "0x534e5f4d41494e455f5354504f4c4941" }], // SEPOLIA_CHAIN_ID
-      });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("User abort") || msg.includes("cancel") || msg.includes("rejected")) {
-        throw new Error("Chain switch cancelled");
-      }
-      throw error;
-    }
-  }, [starknet]);
+  const isSepolia = isSepoliaNetwork(chainId);
 
   return (
     <WalletContext.Provider value={{
-      starknet, account, address, isConnected, isConnecting, chainId, connect, disconnect, switchToSepolia,
+      wallet, account, provider, address, isConnected, isConnecting, chainId, isSepolia,
+      connect, disconnect, switchToSepolia,
     }}>
       {children}
     </WalletContext.Provider>

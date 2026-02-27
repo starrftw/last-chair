@@ -60,7 +60,7 @@ export default function RevealPhase({
   proverReady,
   onRevealComplete,
 }: RevealPhaseProps) {
-  const { account } = useWallet();
+  const { wallet } = useWallet();
 
   // Countdown state
   const [countdownNumber, setCountdownNumber] = useState(COUNTDOWN_DURATION);
@@ -152,11 +152,11 @@ export default function RevealPhase({
       setProof(proofResult);
 
       // Submit proof to contract (optional - in demo mode we skip this)
-      if (account) {
+      if (wallet?.account) {
         setProofState('submitting');
         
         try {
-          const contract = getGameContract(account);
+          const contract = getGameContract(wallet?.account);
           
           // Convert proof to felt252 (simplified - real implementation would serialize properly)
           const proofFelt = BigInt('0x' + 
@@ -193,7 +193,7 @@ export default function RevealPhase({
       setError(err instanceof Error ? err.message : 'Proof generation failed');
       setProofState('failed');
     }
-  }, [account, matchId, playerChoices, proverReady, salt, onRevealComplete]);
+  }, [wallet, matchId, playerChoices, proverReady, salt, onRevealComplete]);
 
   // Store the function ref for useEffect
   useEffect(() => {

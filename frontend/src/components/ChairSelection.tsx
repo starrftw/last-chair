@@ -67,7 +67,7 @@ export default function ChairSelection({
   onCommitmentSubmitted,
   onTimerExpired,
 }: ChairSelectionProps) {
-  const { account, address } = useWallet();
+  const { wallet, address } = useWallet();
 
   // Selection state
   const [choices, setChoices] = useState<PlayerChoices>({
@@ -114,19 +114,19 @@ export default function ChairSelection({
   // Handle trap toggle
   const handleToggleTrap = (chair: number) => {
     if (isLocked || isSubmitting) return;
-    
+
     setChoices((prev) => {
       const newTraps = prev.traps.includes(chair as 1)
         ? prev.traps.filter((t) => t !== chair)
         : [...prev.traps, chair as 1];
-      
+
       return { ...prev, traps: newTraps };
     });
   };
 
   // Lock in and submit commitment
   const handleLockIn = async () => {
-    if (!account || !address || !isValid) return;
+    if (!wallet?.account || !address || !isValid) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -154,14 +154,14 @@ export default function ChairSelection({
       });
 
       // Get contract and submit commitment
-      const contract = getGameContract(account);
+      const contract = getGameContract(wallet?.account);
 
       // Convert match_id to felt252
       const matchIdFelt = BigInt(matchId).toString();
       const commitmentFelt = commitment.toString();
 
       const tx = await contract.submit_commitment(matchIdFelt, commitmentFelt);
-      
+
       console.log('Commitment submitted, tx:', tx);
 
       // Mark as locked
@@ -274,21 +274,20 @@ export default function ChairSelection({
 
       {/* Lock In Button */}
       <button
-        className={`${styles.lockInButton} ${
-          isSubmitting
+        className={`${styles.lockInButton} ${isSubmitting
             ? styles.loading
             : isValid
-            ? styles.enabled
-            : styles.disabled
-        }`}
+              ? styles.enabled
+              : styles.disabled
+          }`}
         onClick={handleLockIn}
         disabled={!isValid || isSubmitting}
       >
         {isSubmitting
           ? 'Submitting...'
           : isValid
-          ? '🔒 Lock In'
-          : `Select chair + ${3 - choices.traps.length} trap${3 - choices.traps.length !== 1 ? 's' : ''}`}
+            ? '🔒 Lock In'
+            : `Select chair + ${3 - choices.traps.length} trap${3 - choices.traps.length !== 1 ? 's' : ''}`}
       </button>
     </div>
   );

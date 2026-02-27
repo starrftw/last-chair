@@ -1,11 +1,8 @@
-"use client";
 import { Contract, RpcProvider, CallData } from "starknet";
 
-export const CONTRACT_ADDRESSES = {
-  GAME: "0x00bf98bcca019014ea239db24ec63016b266df3e5e1041946147b66d9d9887eb",
-  VERIFIER: "0x010cda95beb9f328337ed1d3e021e6468e830f3de17bdd1d8cffda258b0ca470",
-} as const;
+export const GAME_CONTRACT_ADDRESS = "0x00bf98bcca019014ea239db24ec63016b266df3e5e1041946147b66d9d9887eb";
 
+// ABI fragments we actually use
 const GAME_ABI = [
   {
     name: "create_match",
@@ -38,53 +35,42 @@ const GAME_ABI = [
     outputs: [],
     state_mutability: "view",
   },
-] as const;
+];
 
-// walletAccount = wallet.account from get-starknet after enable()
+// Use wallet.account (the real Account object) for transactions
 export async function createMatch(walletAccount: any, betAmountWei: string) {
-  return walletAccount.execute({
-    contractAddress: CONTRACT_ADDRESSES.GAME,
+  const result = await walletAccount.execute({
+    contractAddress: GAME_CONTRACT_ADDRESS,
     entrypoint: "create_match",
+    // u256 is passed as two felts: low, high
     calldata: CallData.compile({ bet_amount: { low: betAmountWei, high: "0" } }),
   });
+  return result;
 }
 
 export async function joinMatch(walletAccount: any, matchId: string) {
-  return walletAccount.execute({
-    contractAddress: CONTRACT_ADDRESSES.GAME,
+  const result = await walletAccount.execute({
+    contractAddress: GAME_CONTRACT_ADDRESS,
     entrypoint: "join_match",
     calldata: CallData.compile({ match_id: { low: matchId, high: "0" } }),
   });
+  return result;
 }
 
 export async function submitCommitment(walletAccount: any, matchId: string, commitment: string) {
-  return walletAccount.execute({
-    contractAddress: CONTRACT_ADDRESSES.GAME,
+  const result = await walletAccount.execute({
+    contractAddress: GAME_CONTRACT_ADDRESS,
     entrypoint: "submit_commitment",
     calldata: CallData.compile({
       match_id: { low: matchId, high: "0" },
       commitment,
     }),
   });
+  return result;
 }
 
-export async function getMatchData(provider: RpcProvider, matchId: string) {
-  const contract = new Contract(GAME_ABI as any, CONTRACT_ADDRESSES.GAME, provider);
-  return contract.get_match({ low: matchId, high: "0" });
+export async function getMatch(provider: RpcProvider, matchId: string) {
+  const contract = new Contract(GAME_ABI, GAME_CONTRACT_ADDRESS, provider);
+  const result = await contract.get_match({ low: matchId, high: "0" });
+  return result;
 }
-
-// Keep getGameContract for backward compat with ChairSelection/RevealPhase
-export function getGameContract(walletAccount: any): any {
-  return {
-    create_match: (bet: string) => createMatch(walletAccount, bet),
-    join_match: (id: string) => joinMatch(walletAccount, id),
-    submit_commitment: (id: string, c: string) => submitCommitment(walletAccount, id, c),
-  };
-}
-
-export function getInstalledWallet() {
-  if (typeof window === "undefined") return null;
-  return "starknet";
-}
-
-export { GAME_ABI };

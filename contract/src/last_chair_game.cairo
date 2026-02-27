@@ -160,7 +160,8 @@ mod LastChairGame {
         ERROR_ALREADY_COMMITTED, ERROR_NOT_COMMITTED, ERROR_INVALID_PROOF,
         ERROR_TIMEOUT, ERROR_NOT_SETTLED,
     };
-    use contract::honk_verifier::{IUltraKeccakHonkVerifierDispatcher, IUltraKeccakHonkVerifierDispatcherTrait};
+    use starknet::syscalls::call_contract_syscall;
+    use starknet::SyscallResultTrait;
 
     // ========================================================================
     // EVENTS ENUM
@@ -372,15 +373,15 @@ mod LastChairGame {
             assert(r.state == RoundState::Committed, ERROR_NOT_COMMITTED);
 
             // Verify ZK proof via Garaga verifier
-            let verifier = IUltraKeccakHonkVerifierDispatcher {
-                contract_address: self.verifier_address.read(),
-            };
-            let result = verifier.verify_ultra_keccak_honk_proof(proof_with_hints);
-            assert(result.is_some(), ERROR_INVALID_PROOF);
-
-            // Extract public inputs: [public_hash]
-            let public_inputs: Span<u256> = result.unwrap();
-            assert(public_inputs.len() >= 1, ERROR_INVALID_PROOF);
+            // Call verifier via syscall since dispatcher visibility is restricted
+            let verifier_address = self.verifier_address.read();
+            let mut calldata = proof_with_hints;
+            let result = call_contract_syscall(
+                verifier_address,
+                selector!("verify_ultra_keccak_honk_proof"),
+                calldata,
+            ).unwrap_syscall();
+            assert(result.len() > 0, ERROR_INVALID_PROOF);
 
             // The single public input is the hash of all revealed values
             // Game logic trusts the proof — position/traps are passed separately

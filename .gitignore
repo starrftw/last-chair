@@ -4,6 +4,8 @@ build/
 *.txt
 BUILD_PLAN.md
 Plan.md
+plans/
+
 
 # Python virtual environments
 circuit/garaga-venv/
@@ -47,3 +49,4 @@ contract/build/
 /tmp/
 var/*
 
+garaga-venv/

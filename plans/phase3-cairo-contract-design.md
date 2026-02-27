@@ -225,7 +225,7 @@ fn verify_proof(
     public_inputs.append(commitment.into());
     public_inputs.append(revealed_position.into());
     public_inputs.append(revealed_trap1.into());
-    public_images.append(revealed_trap2.into());
+    public_inputs.append(revealed_trap2.into());
     public_inputs.append(revealed_trap3.into());
     
     let result = verifier.verify_ultra_keccak_honk_proof(proof);
@@ -268,9 +268,9 @@ sequenceDiagram
 
 ## Deliverables Checklist
 
-- [ ] Update Noir circuit to include revealed values as public inputs
-- [ ] Recompile circuit: `nargo compile`
-- [ ] Regenerate Garaga verifier: `garaga gen --system ultra_keccak_honk`
+- [x] Update Noir circuit to include revealed values as public inputs
+- [ ] Compile circuit: `nargo compile` (in circuit/ directory)
+- [ ] Generate Garaga verifier: `~/garaga-venv/bin/garaga gen --system ultra_keccak_zk_honk --vk circuit/target/vk.bin --project-name contract`
 - [ ] Create LastChairGame.cairo contract
 - [ ] Implement all storage and functions
 - [ ] Add comprehensive tests

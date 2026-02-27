@@ -51,7 +51,7 @@ Create a test script that:
 ### Step 7: Generate Garaga Cairo Verifier
 ```bash
 # Generate Cairo verifier from compiled circuit
-garaga gen --system ultra_keccak_honk --vk circuit/target/vk.bin
+garaga gen --system ultra_keccak_zk_honk --vk circuit/target/vk.bin
 ```
 
 ### Step 8: Compile Verifier Contract

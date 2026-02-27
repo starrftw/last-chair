@@ -4,3 +4,46 @@ build/
 *.txt
 BUILD_PLAN.md
 Plan.md
+
+# Python virtual environments
+circuit/garaga-venv/
+**/venv/
+**/.venv/
+**/env/
+**/.env/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Node modules (if any frontend deps)
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cairo/Scarb
+contract/target/
+contract/build/
+
+# WSL
+/mnt/*
+/proc/*
+/sys/*
+/run/*
+/tmp/
+var/*
+

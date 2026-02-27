@@ -9,9 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@aztec/bb.js": "^4.0.2",
+    "@noir-lang/noir_js": "^1.0.0-beta.19",
+    "get-starknet": "^4.0.0",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "starknet": "^9.2.1"
   },
   "devDependencies": {
     "@types/node": "^20",

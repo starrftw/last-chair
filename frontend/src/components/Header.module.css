@@ -1,0 +1,114 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logoIcon {
+  font-size: 24px;
+}
+
+.logoText {
+  font-size: 20px;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-pink) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+}
+
+.walletSection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connectButton {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, var(--accent-teal) 0%, #2eb8ae 100%);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #0a0a1a;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(78, 205, 196, 0.3);
+}
+
+.connectButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(78, 205, 196, 0.4);
+}
+
+.connectButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.connectButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.connectedInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.addressBadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(78, 205, 196, 0.1);
+  border: 1px solid rgba(78, 205, 196, 0.3);
+  border-radius: var(--radius-sm);
+}
+
+.address {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent-teal);
+}
+
+.wrongNetwork {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--accent-red);
+  color: white;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.disconnectButton {
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.disconnectButton:hover {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+  background: rgba(255, 68, 68, 0.1);
+}

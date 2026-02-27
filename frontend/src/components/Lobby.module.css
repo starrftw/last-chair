@@ -1,0 +1,314 @@
+.lobby {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logoSection {
+  margin-bottom: 3rem;
+}
+
+.title {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: #666;
+}
+
+.connectSection {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.connectTitle {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.walletDetected {
+  color: #22c55e;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.noWallet {
+  margin-bottom: 1rem;
+  color: #666;
+}
+
+.walletList {
+  list-style: none;
+  padding: 0;
+}
+
+.walletList li {
+  margin: 0.5rem 0;
+}
+
+.walletList a {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.walletList a:hover {
+  text-decoration: underline;
+}
+
+.connectButton {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.connectButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.connectButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.infoSection {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: left;
+  margin-bottom: 2rem;
+}
+
+.infoSection h3 {
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.infoSection ol {
+  padding-left: 1.5rem;
+}
+
+.infoSection li {
+  margin: 0.5rem 0;
+  color: #666;
+}
+
+.contractInfo {
+  font-size: 0.85rem;
+  color: #999;
+  word-break: break-all;
+}
+
+.contractInfo p {
+  margin: 0.25rem 0;
+}
+
+/* Connected state styles */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.walletInfo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.address {
+  font-family: monospace;
+  background: #f3f4f6;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.network {
+  color: #22c55e;
+  font-weight: 500;
+}
+
+.disconnectButton {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.disconnectButton:hover {
+  background: #dc2626;
+}
+
+.networkWarning {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  padding: 2rem;
+}
+
+.networkWarning h2 {
+  color: #92400e;
+  margin-bottom: 0.5rem;
+}
+
+.networkWarning p {
+  color: #b45309;
+  margin-bottom: 1rem;
+}
+
+.switchButton {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.switchButton:hover {
+  background: #d97706;
+}
+
+/* Game options */
+.gameOptions {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.optionCard {
+  padding: 1.5rem;
+}
+
+.optionCard h2 {
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.optionCard p {
+  color: #666;
+  margin-bottom: 1.5rem;
+}
+
+.primaryButton {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.primaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.divider {
+  margin: 1.5rem 0;
+  color: #999;
+  font-size: 0.9rem;
+  position: relative;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.divider::before {
+  left: 0;
+}
+
+.divider::after {
+  right: 0;
+}
+
+.matchInput {
+  width: 100%;
+  max-width: 300px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  transition: border-color 0.2s;
+}
+
+.matchInput:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.secondaryButton {
+  background: #fff;
+  color: #667eea;
+  border: 2px solid #667eea;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #667eea;
+  color: white;
+}
+
+.secondaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #ef4444;
+  margin: 1rem 0;
+  font-weight: 500;
+}

@@ -1,0 +1,288 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.header h2 {
+  font-size: 1.8rem;
+  margin: 0;
+}
+
+.matchId {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+/* Music Area */
+.musicArea {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin-bottom: 2rem;
+}
+
+.vinyl {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: 
+    radial-gradient(circle at center, #333 20%, transparent 20%),
+    repeating-radial-gradient(circle at center, #222 0, #222 2px, #333 2px, #333 4px);
+  box-shadow: 
+    0 0 0 8px #111,
+    0 0 30px rgba(0, 0, 0, 0.5);
+}
+
+.vinylCenter {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ff6b9d;
+}
+
+.vinyl.spinning {
+  animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vinyl.spinning .vinylCenter {
+  animation: spin 1.5s linear infinite reverse;
+}
+
+/* Countdown */
+.countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.countdownNumber {
+  font-size: 6rem;
+  font-weight: 700;
+  color: #ff6b9d;
+  text-shadow: 0 0 30px rgba(255, 107, 157, 0.5);
+}
+
+.countdownText {
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.hint {
+  margin-top: 2rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Music Stopped */
+.musicStopped {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  font-size: 1.5rem;
+  color: #4ecdc4;
+}
+
+.musicNote {
+  font-size: 2.5rem;
+}
+
+.musicNote.stopped {
+  color: #ff6b9d;
+  animation: pulse 0.5s ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Choices Reveal */
+.choicesReveal {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.yourChoices h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.choiceItems {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.choiceItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.choiceLabel {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.choiceValue {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Proof Area */
+.proofArea {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.proofArea h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+}
+
+.progressBar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff6b9d, #4ecdc4);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.statusMessage {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.proofSteps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.proofSteps span {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 0.25rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.proofSteps .stepDone {
+  background: rgba(78, 205, 196, 0.2);
+  color: #4ecdc4;
+}
+
+.proofInfo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.proofBadge {
+  padding: 0.25rem 0.75rem;
+  background: rgba(255, 107, 157, 0.2);
+  color: #ff6b9d;
+  border-radius: 1rem;
+  font-size: 0.8rem;
+}
+
+.proofHash {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.error {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(255, 100, 100, 0.2);
+  border-radius: 0.5rem;
+  color: #ff6b6b;
+  font-size: 0.9rem;
+}
+
+/* Waiting for opponent */
+.waitingOpponent {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #ff6b9d;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Skip Button */
+.skipButton {
+  margin-top: 2rem;
+  padding: 0.75rem 2rem;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 0.5rem;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.skipButton:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

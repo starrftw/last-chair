@@ -1,6 +1,6 @@
 import { Contract, RpcProvider, CallData } from "starknet";
 
-export const GAME_CONTRACT_ADDRESS = "0x00bf98bcca019014ea239db24ec63016b266df3e5e1041946147b66d9d9887eb";
+export const GAME_CONTRACT_ADDRESS = "0x05c59e30eeca1796bbbc12f3d3a3f8bbb3403cef579428b1d55e6912b51429ca";
 
 // ABI fragments we actually use
 const GAME_ABI = [

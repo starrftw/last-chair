@@ -6,7 +6,7 @@ import { connect as connectWallet, disconnect as disconnectStarknet } from "get-
 
 const SEPOLIA_RPC_URL = process.env.NEXT_PUBLIC_STARKNET_RPC_URL || "https://free-rpc.nethermind.io/sepolia-juno";
 const DEFAULT_SEPOLIA_CHAIN_ID = process.env.NEXT_PUBLIC_SEPOLIA_CHAIN_ID || "0x534e5f5345504f4c4941";
-export const GAME_CONTRACT_ADDRESS = "0x00bf98bcca019014ea239db24ec63016b266df3e5e1041946147b66d9d9887eb";
+export const GAME_CONTRACT_ADDRESS = "0x05c59e30eeca1796bbbc12f3d3a3f8bbb3403cef579428b1d55e6912b51429ca";
 
 // Valid Sepolia chain IDs - handle different formats wallets may return
 const SEPOLIA_CHAIN_IDS = [

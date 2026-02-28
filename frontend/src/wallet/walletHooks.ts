@@ -2,7 +2,7 @@
 import { Contract, RpcProvider, CallData } from "starknet";
 
 export const CONTRACT_ADDRESSES = {
-  GAME: "0x00bf98bcca019014ea239db24ec63016b266df3e5e1041946147b66d9d9887eb",
+  GAME: "0x05c59e30eeca1796bbbc12f3d3a3f8bbb3403cef579428b1d55e6912b51429ca",
   VERIFIER: "0x010cda95beb9f328337ed1d3e021e6468e830f3de17bdd1d8cffda258b0ca470",
 } as const;
 

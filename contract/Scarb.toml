@@ -1,18 +1,11 @@
 [package]
-name = "contract"
-version = "0.1.0"
-edition = "2024_07"
-
-[dependencies]
-garaga = { git = "https://github.com/keep-starknet-strange/garaga.git", tag = "v0.15.5" }
-starknet = "2.9.2"
-
-[cairo]
-sierra-replace-ids = false
-
-[dev-dependencies]
-cairo_test = "2.9.2"
+name = "last_chair"
+version = "0.2.0"
 
 [[target.starknet-contract]]
-casm = true
-casm-add-pythonic-hints = true
+sierra = true
+
+[dependencies]
+starknet = ">=2.9.2"
+openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v0.20.0" }
+garaga = { git = "https://github.com/keep-starknet-strange/garaga.git", tag = "v0.15.5" }

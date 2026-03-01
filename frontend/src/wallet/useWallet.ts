@@ -22,8 +22,7 @@ export function useWallet() {
 
   return {
     wallet,
-    account,     // Account instance for contract calls
-    starknet: wallet, // alias for backward compatibility
+    account,
     provider,
     address,
     isConnected,

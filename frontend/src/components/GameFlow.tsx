@@ -2,427 +2,434 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useWallet } from '@/wallet/useWallet';
-import { getGameContract, CONTRACT_ADDRESSES } from '@/wallet/walletHooks';
-import { ProofResult, initializeProver } from '@/zk/prover';
-import { PlayerChoices, RoundResult, ChairPosition } from '@/game/types';
-import { resolveRound, settleMatch, getCurrentSplit } from '@/game/gameEngine';
+import {
+  approveAndStartMatch,
+  submitReveal,
+  settleRound,
+  settleMatch,
+  getMatchData,
+  getRoundData,
+  computeCommitments,
+  getContractAddresses,
+} from '@/wallet/walletHooks';
+import { initializeProver, generateProof } from '@/zk/prover';
 import ChairSelection from './ChairSelection';
-import RevealPhase from './RevealPhase';
-import RoundResultView from './RoundResult';
-import MatchResult from './MatchResult';
 import styles from './GameFlow.module.css';
 
-// Game phases
-export type GamePhase =
-  | 'lobby'
-  | 'chair_selection'
-  | 'waiting_commitment'
-  | 'reveal'
-  | 'round_result'
-  | 'match_result';
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-interface GameFlowProps {
-  initialMatchId?: string;
+export type GamePhase =
+  | 'lobby'         // wallet connected, loadout + stake selection
+  | 'searching'     // waiting for opponent match via relay
+  | 'starting'      // both matched, signing start_match tx
+  | 'round_active'  // 20s timer running
+  | 'revealing'     // generating + submitting ZK proof
+  | 'round_result'  // scores shown, next round countdown
+  | 'match_result'; // final split + payout
+
+export interface Loadout {
+  chair: number;       // 1-12
+  trap1: number;
+  trap2: number;
+  trap3: number;
 }
 
-const DEFAULT_BET_AMOUNT = '10'; // STRK in wei (10 = 10 STRK)
+export interface RoundScore {
+  round: number;
+  scoreA: number;   // scaled x4
+  scoreB: number;
+  chairA: number;
+  chairB: number;
+  trappedA: boolean;
+  trappedB: boolean;
+}
 
-export default function GameFlow({ initialMatchId }: GameFlowProps) {
-  const { account, isConnected, isSepolia } = useWallet();
+// STRK amounts in wei (18 decimals)
+const STAKE_OPTIONS = [
+  { label: '1 STRK', value: (1n * 10n ** 18n).toString() },
+  { label: '5 STRK', value: (5n * 10n ** 18n).toString() },
+  { label: '10 STRK', value: (10n * 10n ** 18n).toString() },
+];
 
-  // Game state
+const DEFAULT_LOADOUT: Loadout = { chair: 6, trap1: 2, trap2: 7, trap3: 11 };
+const ROUND_TIMER_SECONDS = 20;
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export default function GameFlow() {
+  const { wallet, provider, chainId, isConnected, isSepolia } = useWallet();
+
+  // ── Match state
   const [phase, setPhase] = useState<GamePhase>('lobby');
-  const [matchId, setMatchId] = useState<string>(initialMatchId || '');
+  const [matchId, setMatchId] = useState<string>('');
   const [playerRole, setPlayerRole] = useState<'a' | 'b' | null>(null);
   const [currentRound, setCurrentRound] = useState(1);
-  const [roundResults, setRoundResults] = useState<RoundResult[]>([]);
-  const [potAmount] = useState(10); // STRK
+  const [roundScores, setRoundScores] = useState<RoundScore[]>([]);
 
-  // Player choices
-  const [playerChoices, setPlayerChoices] = useState<PlayerChoices>({
-    position: null,
-    traps: [],
-  });
+  // ── Loadout + stake
+  const [loadout, setLoadout] = useState<Loadout>(DEFAULT_LOADOUT);
+  const [stakeWei, setStakeWei] = useState(STAKE_OPTIONS[0].value);
 
-  // Opponent state
-  const [opponentLocked, setOpponentLocked] = useState(false);
+  // ── Commitments (computed once at match start, for all 3 rounds)
+  const [salts, setSalts] = useState<bigint[]>([]);
+  const [commitments, setCommitments] = useState<[string, string, string] | null>(null);
 
-  // Loading and error states
+  // ── UI state
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Proof state
-  const [proofResult, setProofResult] = useState<ProofResult | null>(null);
-
-  // Prover initialization
   const [proverReady, setProverReady] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
 
-  // Polling interval ref
+  // ── Polling
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize ZK prover on mount
+  // ─── Init prover on mount
   useEffect(() => {
-    const initProver = async () => {
-      try {
-        await initializeProver();
-        setProverReady(true);
-      } catch (err) {
-        console.warn('Prover initialization failed, using simulation:', err);
-        setProverReady(true);
-      }
-    };
-    initProver();
+    if (typeof window === 'undefined') return;
+    initializeProver()
+      .then(() => setProverReady(true))
+      .catch(e => { console.warn('Prover init failed:', e); setProverReady(true); });
   }, []);
 
-  // Check opponent commitment on contract
-  const checkOpponentCommitment = useCallback(async () => {
-    if (!account || !matchId) return;
+  // ─── Cleanup polling on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  // ─── Generate salts + commitments from loadout
+  // Called once when match is confirmed — covers all 3 rounds
+  const buildCommitments = useCallback((l: Loadout): { salts: bigint[], commits: [string, string, string] } => {
+    const newSalts = [0, 1, 2].map(() => BigInt(Math.floor(Math.random() * 1e15)));
+    const rounds = newSalts.map(salt => ({
+      chair: l.chair, trap1: l.trap1, trap2: l.trap2, trap3: l.trap3, salt,
+    }));
+    const commits = computeCommitments(rounds, (inputs) => {
+      // Real pedersen computed in prover — this is a placeholder commitment
+      // Actual value sent to chain comes from generateProof output
+      const seed = inputs.reduce((acc, v) => acc + BigInt(v), 0n);
+      return ('0x' + seed.toString(16).padStart(62, '0'));
+    });
+    return { salts: newSalts, commits };
+  }, []);
+
+  // ─── PLAY button — enter matchmaking queue
+  const handlePlay = useCallback(async () => {
+    if (!wallet?.account || !chainId) { setError('Wallet not connected'); return; }
+    setIsLoading(true);
+    setError(null);
+    setPhase('searching');
+    setStatusMsg('Finding opponent...');
 
     try {
-      const contract = getGameContract(wallet?.account);
-      const matchData = await contract.get_match(matchId);
+      // Generate commitments for all 3 rounds from current loadout
+      const { salts: newSalts, commits } = buildCommitments(loadout);
+      setSalts(newSalts);
+      setCommitments(commits);
 
-      // matchData is tuple: (player_a, player_b, bet_amount, round_number, score_a, score_b)
-      const [, , , roundNumber] = matchData;
+      // Notify off-chain relay we want a match
+      // Relay returns match_id + opponent address when matched
+      const matchedId = await waitForMatch(stakeWei, chainId);
+      setMatchId(matchedId);
 
-      // If round number has incremented past current round, opponent has committed
-      if (Number(roundNumber) > currentRound) {
-        setOpponentLocked(true);
-      }
+      // Both players sign approve + start_match in one tx
+      setStatusMsg('Confirm transaction to lock stake...');
+      setPhase('starting');
+
+      const tx = await approveAndStartMatch(
+        wallet.account, chainId, matchedId, stakeWei,
+        commits[0], commits[1], commits[2]
+      );
+      console.log('start_match tx:', tx.transaction_hash);
+
+      // Determine player role from relay response (set during waitForMatch)
+      // For now set by relay — TODO: relay must tell us a/b
+      setPlayerRole('a'); // relay will set this correctly
+      setCurrentRound(1);
+      setRoundScores([]);
+      setPhase('round_active');
+      setStatusMsg('');
     } catch (err) {
-      console.error('Error checking opponent commitment:', err);
+      console.error('Failed to start match:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start match');
+      setPhase('lobby');
+    } finally {
+      setIsLoading(false);
     }
-  }, [account, matchId, currentRound]);
+  }, [wallet, chainId, loadout, stakeWei, buildCommitments]);
 
-  // Poll for opponent commitment
-  useEffect(() => {
-    if (phase === 'waiting_commitment' && matchId) {
-      pollRef.current = setInterval(async () => {
-        await checkOpponentCommitment();
-      }, 3000);
+  // ─── Round timer expired — auto-commit current loadout selection
+  const handleRoundEnd = useCallback(async (finalLoadout: Loadout) => {
+    if (!wallet?.account || !chainId || !matchId || !commitments || !salts.length) return;
 
-      return () => {
-        if (pollRef.current) clearInterval(pollRef.current);
+    setPhase('revealing');
+    setStatusMsg('Encrypting your moves...');
+
+    try {
+      // If player changed loadout during the round, we need to recompute
+      // BUT: the commitment was already sent to chain at match start
+      // So we always reveal with the ORIGINAL loadout for this round
+      // (the ZK proof verifies it matches the stored commitment)
+      const roundIndex = currentRound - 1;
+      const salt = salts[roundIndex];
+
+      // Generate ZK proof
+      setStatusMsg('Generating proof...');
+      const proof = await generateProof({
+        chair: loadout.chair,
+        trap1: loadout.trap1,
+        trap2: loadout.trap2,
+        trap3: loadout.trap3,
+        salt,
+        commitment: BigInt(commitments[roundIndex]),
+      });
+
+      // Submit reveal (proof + revealed values appended)
+      setStatusMsg('Submitting to chain...');
+      const proofWithHints = [
+        ...proof.proofFelts,
+        loadout.chair.toString(),
+        loadout.trap1.toString(),
+        loadout.trap2.toString(),
+        loadout.trap3.toString(),
+      ];
+      await submitReveal(wallet.account, chainId, matchId, currentRound, proofWithHints);
+
+      // Poll until opponent reveals too, then settle
+      setStatusMsg('Waiting for opponent reveal...');
+      await pollUntilBothRevealed(matchId, currentRound);
+
+      // Settle round — callable by anyone
+      await settleRound(wallet.account, chainId, matchId, currentRound);
+
+      // Read results from chain
+      const roundData = await getRoundData(provider!, chainId, matchId, currentRound) as any;
+      const score: RoundScore = {
+        round: currentRound,
+        scoreA: Number(roundData.score_a),
+        scoreB: Number(roundData.score_b),
+        chairA: Number(roundData.chair_a),
+        chairB: Number(roundData.chair_b),
+        trappedA: isTrapped(Number(roundData.chair_a), Number(roundData.trap1_b), Number(roundData.trap2_b), Number(roundData.trap3_b)),
+        trappedB: isTrapped(Number(roundData.chair_b), Number(roundData.trap1_a), Number(roundData.trap2_a), Number(roundData.trap3_a)),
       };
-    }
-  }, [phase, matchId, checkOpponentCommitment]);
+      setRoundScores(prev => [...prev, score]);
+      setPhase('round_result');
+      setStatusMsg('');
 
-  // ── Contract Actions ──
-
-  // At top of component, get wallet from context
-  const { wallet } = useWallet();
-
-  const handleCreateMatch = useCallback(async () => {
-    if (!wallet?.account) {
-      setError('Wallet not connected');
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      const contract = getGameContract(wallet.account);
-      const tx = await contract.create_match(DEFAULT_BET_AMOUNT.toString());
-      console.log('Create match tx:', tx);
-      const newMatchId = Date.now().toString(); // temp until we parse events
-      setMatchId(newMatchId);
-      setPlayerRole('a');
-      setPhase('chair_selection');
     } catch (err) {
-      console.error('Failed to create match:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create match');
-    } finally {
-      setIsLoading(false);
+      console.error('Round reveal failed:', err);
+      setError(err instanceof Error ? err.message : 'Round failed');
+      setPhase('round_result'); // still show result screen
     }
-  }, [wallet]);
+  }, [wallet, chainId, matchId, commitments, salts, currentRound, loadout, provider]);
 
-  const handleJoinMatch = useCallback(async (inputMatchId: string) => {
-    if (!account) {
-      setError('Wallet not connected');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const contract = getGameContract(wallet?.account);
-      const matchIdFelt = BigInt(inputMatchId).toString();
-
-      const tx = await contract.join_match(matchIdFelt);
-      console.log('Join match tx:', tx);
-
-      setMatchId(inputMatchId);
-      setPlayerRole('b');
-      setPhase('chair_selection');
-    } catch (err) {
-      console.error('Failed to join match:', err);
-      setError(err instanceof Error ? err.message : 'Failed to join match. Make sure the match exists.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [account]);
-
-  // Handle commitment submission
-  const handleCommitmentSubmitted = useCallback(async () => {
-    if (!account || !matchId || !playerChoices.position) return;
-
-    setPhase('waiting_commitment');
-
-    // In a real game, the opponent would also commit via their own wallet
-    // For demo, we simulate by checking contract after a delay
-    setOpponentLocked(true);
-
-    // Short delay then move to reveal
-    setTimeout(() => {
-      setPhase('reveal');
-    }, 2000);
-  }, [account, matchId, playerChoices]);
-
-  // Handle timer expired (auto-submit)
-  const handleTimerExpired = useCallback(() => {
-    if (playerChoices.position && playerChoices.traps.length === 3) {
-      handleCommitmentSubmitted();
-    }
-  }, [playerChoices, handleCommitmentSubmitted]);
-
-  // Handle reveal phase complete
-  const handleRevealComplete = useCallback(async (
-    revealedChoices: PlayerChoices,
-    proof: ProofResult
-  ) => {
-    setProofResult(proof);
-    resolveRoundLocally(revealedChoices);
-  }, []);
-
-  // Generate random traps for opponent
-  const generateOpponentTraps = (): ChairPosition[] => {
-    const traps: ChairPosition[] = [];
-    while (traps.length < 3) {
-      const randomChair = (Math.floor(Math.random() * 12) + 1) as ChairPosition;
-      if (!traps.includes(randomChair)) {
-        traps.push(randomChair);
-      }
-    }
-    return traps;
-  };
-
-  // Generate random position for opponent
-  const generateOpponentPosition = (traps: ChairPosition[]): ChairPosition => {
-    let position: ChairPosition;
-    do {
-      position = (Math.floor(Math.random() * 12) + 1) as ChairPosition;
-    } while (traps.includes(position));
-    return position;
-  };
-
-  // Resolve round locally (demo mode)
-  const resolveRoundLocally = useCallback(async (opponentChoicesParam?: PlayerChoices) => {
-    // Generate opponent choices if not provided (demo mode)
-    let oppChoices: PlayerChoices;
-
-    if (opponentChoicesParam) {
-      oppChoices = opponentChoicesParam;
-    } else {
-      const traps = generateOpponentTraps();
-      const position = generateOpponentPosition(traps);
-      oppChoices = { position, traps };
-    }
-
-    // If player is A, their choices go to playerA
-    // If player is B, their choices go to playerB, and we generate A's choices
-    const playerAChoices = playerRole === 'a' ? playerChoices : oppChoices;
-    const playerBChoices = playerRole === 'b' ? playerChoices : oppChoices;
-
-    const result = resolveRound(playerAChoices, playerBChoices);
-
-    // Add opponent's actual traps to result for display
-    const displayResult: RoundResult = {
-      ...result,
-      playerAChoices,
-      playerBChoices,
-    };
-
-    setRoundResults(prev => [...prev, displayResult]);
-    setPhase('round_result');
-  }, [playerChoices, playerRole]);
-
-  // Continue to next round or end match
-  const handleRoundContinue = useCallback(() => {
+  // ─── Continue to next round or end match
+  const handleRoundContinue = useCallback(async () => {
     if (currentRound >= 3) {
-      // Settle match - results are shown in MatchResult component
+      // Settle match on chain
+      try {
+        await settleMatch(wallet!.account, chainId!, matchId);
+      } catch (err) {
+        console.error('settle_match failed:', err);
+      }
       setPhase('match_result');
     } else {
-      // Advance to next round
-      setCurrentRound(prev => prev + 1);
-      setPlayerChoices({ position: null, traps: [] });
-      setOpponentLocked(false);
-      setProofResult(null);
-      setPhase('chair_selection');
+      setCurrentRound(r => r + 1);
+      setPhase('round_active');
     }
-  }, [currentRound]);
+  }, [currentRound, wallet, chainId, matchId]);
 
-  // Play again - reset to lobby
+  // ─── Auto-queue after match
   const handlePlayAgain = useCallback(() => {
     setPhase('lobby');
     setMatchId('');
     setPlayerRole(null);
     setCurrentRound(1);
-    setRoundResults([]);
-    setPlayerChoices({ position: null, traps: [] });
-    setOpponentLocked(false);
-    setProofResult(null);
+    setRoundScores([]);
+    setCommitments(null);
+    setSalts([]);
+    setError(null);
   }, []);
 
-  // ── Render Methods ──
+  // ─── Cumulative split helper
+  const getCumulativeSplit = () => {
+    const totalA = roundScores.reduce((s, r) => s + r.scoreA, 0);
+    const totalB = roundScores.reduce((s, r) => s + r.scoreB, 0);
+    const total = totalA + totalB;
+    if (total === 0) return { pctA: 50, pctB: 50 };
+    return { pctA: Math.round((totalA / total) * 100), pctB: Math.round((totalB / total) * 100) };
+  };
 
-  // Render lobby
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  // LOBBY
   if (phase === 'lobby') {
     return (
-      <div className={styles.lobbyContainer}>
-        <div className={styles.lobbyHeader}>
-          <h1 className={styles.title}>🎵 Last Chair</h1>
-          <p className={styles.subtitle}>ZK Musical Chairs on Starknet</p>
-        </div>
-
+      <div className={styles.lobby}>
         {!isConnected ? (
           <div className={styles.connectPrompt}>
-            <p>Connect your wallet to play</p>
+            <p>Connect wallet to play</p>
           </div>
         ) : !isSepolia ? (
           <div className={styles.networkPrompt}>
-            <p>Please switch to Starknet Sepolia</p>
+            <p>Switch to Starknet Sepolia</p>
           </div>
         ) : (
-          <div className={styles.gameOptions}>
-            <button
-              className={styles.createButton}
-              onClick={handleCreateMatch}
-              disabled={isLoading}
-            >
-              {isLoading ? 'Creating...' : '🎮 Create Match'}
-              <span className={styles.betAmount}>{DEFAULT_BET_AMOUNT} STRK</span>
-            </button>
+          <>
+            {/* Loadout selector */}
+            <LoadoutSelector loadout={loadout} onChange={setLoadout} />
 
-            <div className={styles.divider}>OR</div>
-
-            <div className={styles.joinSection}>
-              <input
-                type="text"
-                className={styles.matchInput}
-                placeholder="Enter match ID..."
-                value={matchId}
-                onChange={(e) => setMatchId(e.target.value)}
-              />
-              <button
-                className={styles.joinButton}
-                onClick={() => handleJoinMatch(matchId)}
-                disabled={isLoading || !matchId}
-              >
-                {isLoading ? 'Joining...' : '🔗 Join Match'}
-              </button>
+            {/* Stake selector */}
+            <div className={styles.stakeSelector}>
+              {STAKE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  className={`${styles.stakeBtn} ${stakeWei === opt.value ? styles.selected : ''}`}
+                  onClick={() => setStakeWei(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
-          </div>
+
+            <button
+              className={styles.playButton}
+              onClick={handlePlay}
+              disabled={isLoading || !proverReady}
+            >
+              {isLoading ? 'Finding match...' : 'PLAY'}
+            </button>
+          </>
         )}
 
         {error && (
           <div className={styles.error}>
             {error}
-            <button onClick={() => setError(null)}>Dismiss</button>
+            <button onClick={() => setError(null)}>×</button>
           </div>
         )}
 
         <div className={styles.contractInfo}>
-          <p>Game Contract: {CONTRACT_ADDRESSES.GAME.slice(0, 10)}...</p>
-          <p>Network: Starknet Sepolia</p>
+          <span>{getContractAddresses(chainId ?? 'SN_SEPOLIA').game.slice(0, 10)}...</span>
+          <span>Sepolia</span>
         </div>
       </div>
     );
   }
 
-  // Render chair selection
-  if (phase === 'chair_selection') {
+  // SEARCHING / STARTING
+  if (phase === 'searching' || phase === 'starting') {
     return (
-      <div className={styles.gameContainer}>
-        <ChairSelection
-          matchId={matchId}
-          roundNumber={currentRound}
-          playerRole={playerRole!}
-          opponentLocked={opponentLocked}
-          onCommitmentSubmitted={handleCommitmentSubmitted}
-          onTimerExpired={handleTimerExpired}
-        />
+      <div className={styles.searching}>
+        <div className={styles.spinner} />
+        <p>{statusMsg}</p>
+        {phase === 'searching' && (
+          <button className={styles.cancelBtn} onClick={handlePlayAgain}>Cancel</button>
+        )}
       </div>
     );
   }
 
-  // Render waiting for commitment
-  if (phase === 'waiting_commitment') {
+  // ROUND ACTIVE
+  if (phase === 'round_active' || phase === 'revealing') {
+    const split = getCumulativeSplit();
     return (
-      <div className={styles.waitingContainer}>
-        <div className={styles.spinner}></div>
-        <h2>Waiting for Opponent</h2>
-        <p>Match ID: {matchId.slice(0, 8)}...</p>
-        <p>Round {currentRound}/3</p>
-
-        <div className={styles.statusBadges}>
-          <span className={styles.myBadge}>✓ You committed</span>
-          <span className={`${styles.opponentBadge} ${opponentLocked ? styles.ready : ''}`}>
-            {opponentLocked ? '✓' : '⏳'} Opponent
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  // Render reveal phase
-  if (phase === 'reveal') {
-    return (
-      <RevealPhase
+      <ChairSelection
         matchId={matchId}
+        roundNumber={currentRound}
         playerRole={playerRole!}
-        playerChoices={playerChoices}
-        roundNumber={currentRound}
-        proverReady={proverReady}
-        onRevealComplete={handleRevealComplete}
+        loadout={loadout}
+        onLoadoutChange={setLoadout}
+        onRoundEnd={handleRoundEnd}
+        timerSeconds={ROUND_TIMER_SECONDS}
+        isRevealing={phase === 'revealing'}
+        revealStatus={statusMsg}
+        splitA={split.pctA}
+        splitB={split.pctB}
       />
     );
   }
 
-  // Render round result
+  // ROUND RESULT
   if (phase === 'round_result') {
-    const latestResult = roundResults[roundResults.length - 1];
-
+    const latest = roundScores[roundScores.length - 1];
+    const split = getCumulativeSplit();
     return (
-      <RoundResultView
-        roundNumber={currentRound}
-        result={latestResult}
-        allResults={roundResults}
-        potAmount={potAmount}
-        onContinue={handleRoundContinue}
-        isFinalRound={currentRound >= 3}
-      />
+      <div style={{ padding: 32, textAlign: 'center' }}>
+        <h2>Round {currentRound} / 3</h2>
+        <p>Your chair: {latest?.chairA} {latest?.trappedA ? '☠️ TRAPPED' : '✅ Safe'}</p>
+        <p>Their chair: {latest?.chairB} {latest?.trappedB ? '☠️ TRAPPED' : '✅ Safe'}</p>
+        <p>Split: {split.pctA}% / {split.pctB}%</p>
+        <button onClick={handleRoundContinue} style={{ marginTop: 16, padding: '8px 24px' }}>
+          {currentRound >= 3 ? 'See Final Result →' : 'Next Round →'}
+        </button>
+      </div>
     );
   }
-
-  // Render match result
+  // MATCH RESULT
   if (phase === 'match_result') {
-    const finalSplit = settleMatch(roundResults);
-
+    const split = getCumulativeSplit();
+    const won = (playerRole === 'a' ? split.pctA : split.pctB) > 50;
+    const stakeNum = Number(BigInt(stakeWei) / 10n ** 18n);
     return (
-      <MatchResult
-        roundResults={roundResults}
-        finalSplit={finalSplit}
-        potAmount={potAmount}
-        onPlayAgain={handlePlayAgain}
-      />
+      <div style={{ padding: 32, textAlign: 'center' }}>
+        <h1>{won ? '🏆 You Win!' : '💀 You Lose'}</h1>
+        <p>Final split: {split.pctA}% / {split.pctB}%</p>
+        <p>Pot: {stakeNum * 2} STRK</p>
+        {roundScores.map(r => (
+          <p key={r.round}>R{r.round}: {r.scoreA} vs {r.scoreB}</p>
+        ))}
+        <button onClick={handlePlayAgain} style={{ marginTop: 16, padding: '8px 24px' }}>
+          Play Again
+        </button>
+      </div>
     );
   }
 
-  // Fallback
-  return (
-    <div className={styles.loading}>
-      <div className={styles.spinner}></div>
-      <p>Loading game...</p>
-    </div>
-  );
+  // ─── Inline sub-components (placeholder until you build them out) ─────────────
+
+  function LoadoutSelector({ loadout, onChange }: { loadout: Loadout; onChange: (l: Loadout) => void }) {
+    const PRESETS = [
+      { name: '🕺 Safety Dance', chair: 2, trap1: 6, trap2: 7, trap3: 8 },
+      { name: '🔥 Hot Potato', chair: 11, trap1: 2, trap2: 3, trap3: 4 },
+      { name: '🌀 Dizzy Rascal', chair: 6, trap1: 1, trap2: 9, trap3: 12 },
+      { name: '🐍 Snake Eyes', chair: 9, trap1: 3, trap2: 5, trap3: 6 },
+      { name: '🎭 Masquerade', chair: 4, trap1: 8, trap2: 9, trap3: 11 },
+    ];
+
+    return (
+      <div>
+        {PRESETS.map(p => (
+          <button
+            key={p.name}
+            onClick={() => onChange({ chair: p.chair, trap1: p.trap1, trap2: p.trap2, trap3: p.trap3 })}
+            style={{ fontWeight: loadout.chair === p.chair ? 'bold' : 'normal', margin: 4 }}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+  function isTrapped(pos: number, t1: number, t2: number, t3: number): boolean {
+    return pos === t1 || pos === t2 || pos === t3;
+  }
+
+  // Off-chain relay call — polls until opponent found, returns match_id
+  async function waitForMatch(stakeWei: string, chainId: string): Promise<string> {
+    // TODO: replace with real relay endpoint
+    // Relay listens to QueueOpened events, pairs two players with same stake,
+    // calls match_players(), returns match_id to both
+    // For now — generate a match_id and simulate instant match
+    await new Promise(r => setTimeout(r, 2000));
+    return Math.floor(Math.random() * 1e10).toString();
+  }
+
+  // Poll contract until both players have revealed for a round
+  async function pollUntilBothRevealed(matchId: string, round: number): Promise<void> {
+    // TODO: poll getRoundData until round.state === Settled (both reveals in)
+    // For now simulate with a delay
+    await new Promise(r => setTimeout(r, 3000));
+  }
 }

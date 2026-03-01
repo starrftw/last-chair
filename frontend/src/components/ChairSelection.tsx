@@ -1,294 +1,180 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { useWallet } from '@/wallet/useWallet';
-import { getGameContract, CONTRACT_ADDRESSES } from '@/wallet/walletHooks';
-import { PlayerChoices } from '@/game/types';
-import { isValidSelection } from '@/game/gameEngine';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { Loadout } from './GameFlow';
 import ChairGrid from './ChairGrid';
 import TimerBar from './TimerBar';
 import styles from './ChairSelection.module.css';
 
+// ─── Props ────────────────────────────────────────────────────────────────────
+
 interface ChairSelectionProps {
-  matchId: string;
-  roundNumber: number;
-  playerRole: 'a' | 'b';
-  opponentLocked: boolean;
-  onCommitmentSubmitted: () => void;
-  onTimerExpired: () => void;
+  matchId:        string;
+  roundNumber:    number;
+  playerRole:     'a' | 'b';
+  loadout:        Loadout;
+  onLoadoutChange: (l: Loadout) => void;
+  onRoundEnd:     (finalLoadout: Loadout) => void;  // fires when timer hits 0
+  timerSeconds:   number;
+  isRevealing:    boolean;   // true while proof generating / submitting
+  revealStatus:   string;    // status message during reveal
+  splitA:         number;    // cumulative % for player A
+  splitB:         number;
 }
 
-const TIMER_DURATION = 20; // seconds
-
-// Starknet field prime
-const FIELD_PRIME = BigInt('0x800000000000010FFFFFFFFFFFFFFFFB781126DCAE6B9B1613DFD817BFCB2988D');
-
-/**
- * Simple Poseidon-like hash implementation for Starknet
- * Creates a commitment hash from position, traps, and salt
- */
-function poseidonHash(
-  position: number,
-  trap1: number,
-  trap2: number,
-  trap3: number,
-  salt: bigint
-): bigint {
-  // Use field arithmetic to create a deterministic hash
-  // This mimics Poseidon-like structure: H(H(H(H(pos, trap1), trap2), trap3), salt)
-  let result = BigInt(position);
-  result = (result * BigInt(31) + BigInt(trap1)) % FIELD_PRIME;
-  result = (result * BigInt(37) + BigInt(trap2)) % FIELD_PRIME;
-  result = (result * BigInt(41) + BigInt(trap3)) % FIELD_PRIME;
-  result = (result * BigInt(43) + salt) % FIELD_PRIME;
-
-  // Ensure result is positive
-  return (result + FIELD_PRIME) % FIELD_PRIME;
-}
-
-/**
- * Generate a random salt for the commitment
- */
-function generateSalt(): bigint {
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  let salt = BigInt(0);
-  for (let i = 0; i < array.length; i++) {
-    salt = (salt << BigInt(8)) | BigInt(array[i]);
-  }
-  return salt % FIELD_PRIME;
-}
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ChairSelection({
   matchId,
   roundNumber,
   playerRole,
-  opponentLocked,
-  onCommitmentSubmitted,
-  onTimerExpired,
+  loadout,
+  onLoadoutChange,
+  onRoundEnd,
+  timerSeconds,
+  isRevealing,
+  revealStatus,
+  splitA,
+  splitB,
 }: ChairSelectionProps) {
-  const { wallet, address } = useWallet();
 
-  // Selection state
-  const [choices, setChoices] = useState<PlayerChoices>({
-    position: null,
-    traps: [],
-  });
+  // Snapshot loadout at component mount — this is what was committed on-chain
+  // Player can change during timer but the committed values are what matter for ZK
+  const committedLoadout = useRef<Loadout>(loadout);
 
-  // Timer state
-  const [timerRunning, setTimerRunning] = useState(true);
-  const [timerComplete, setTimerComplete] = useState(false);
+  const [timerDone, setTimerDone] = useState(false);
+  const [localLoadout, setLocalLoadout] = useState<Loadout>(loadout);
 
-  // Lock-in state
-  const [isLocked, setIsLocked] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [salt, setSalt] = useState<bigint | null>(null);
+  // Sync local loadout to parent
+  const handleLoadoutChange = useCallback((l: Loadout) => {
+    setLocalLoadout(l);
+    onLoadoutChange(l);
+  }, [onLoadoutChange]);
 
-  // Valid selection check
-  const isValid = isValidSelection(choices);
+  // Chair select — first click sets chair, unless it's already a trap
+  const handleSelectChair = useCallback((chair: number) => {
+    if (isRevealing || timerDone) return;
+    if ([localLoadout.trap1, localLoadout.trap2, localLoadout.trap3].includes(chair)) return;
+    handleLoadoutChange({ ...localLoadout, chair });
+  }, [localLoadout, isRevealing, timerDone, handleLoadoutChange]);
 
-  // Handle timer completion
-  const handleTimerComplete = useCallback(() => {
-    setTimerComplete(true);
-    setTimerRunning(false);
-    onTimerExpired();
-  }, [onTimerExpired]);
+  // Trap toggle — right click or separate mode
+  const handleToggleTrap = useCallback((chair: number) => {
+    if (isRevealing || timerDone) return;
+    if (chair === localLoadout.chair) return; // can't trap your own chair
 
-  // Auto-submit when timer expires if selection is valid
-  useEffect(() => {
-    if (timerComplete && isValid && !isLocked && !isSubmitting) {
-      handleLockIn();
-    }
-  }, [timerComplete, isValid, isLocked, isSubmitting]);
+    const traps = [localLoadout.trap1, localLoadout.trap2, localLoadout.trap3];
+    const isAlreadyTrap = traps.includes(chair);
 
-  // Handle chair selection
-  const handleSelectChair = (chair: number) => {
-    if (isLocked || isSubmitting) return;
-    setChoices((prev) => ({
-      ...prev,
-      position: chair as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,
-    }));
-  };
-
-  // Handle trap toggle
-  const handleToggleTrap = (chair: number) => {
-    if (isLocked || isSubmitting) return;
-
-    setChoices((prev) => {
-      const newTraps = prev.traps.includes(chair as 1)
-        ? prev.traps.filter((t) => t !== chair)
-        : [...prev.traps, chair as 1];
-
-      return { ...prev, traps: newTraps };
-    });
-  };
-
-  // Lock in and submit commitment
-  const handleLockIn = async () => {
-    if (!wallet?.account || !address || !isValid) return;
-
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      // Generate salt for this commitment
-      const newSalt = generateSalt();
-      setSalt(newSalt);
-
-      // Generate commitment hash
-      const commitment = poseidonHash(
-        choices.position!,
-        choices.traps[0],
-        choices.traps[1],
-        choices.traps[2],
-        newSalt
-      );
-
-      console.log('Submitting commitment:', {
-        matchId,
-        commitment: commitment.toString(),
-        position: choices.position,
-        traps: choices.traps,
-        salt: newSalt.toString(),
+    if (isAlreadyTrap) {
+      // Remove trap — shift others
+      const newTraps = traps.filter(t => t !== chair);
+      // Fill removed slot with 0 temporarily — keep other traps
+      handleLoadoutChange({
+        ...localLoadout,
+        trap1: newTraps[0] ?? localLoadout.trap1,
+        trap2: newTraps[1] ?? localLoadout.trap2,
+        trap3: newTraps[2] ?? localLoadout.trap3,
       });
-
-      // Get contract and submit commitment
-      const contract = getGameContract(wallet?.account);
-
-      // Convert match_id to felt252
-      const matchIdFelt = BigInt(matchId).toString();
-      const commitmentFelt = commitment.toString();
-
-      const tx = await contract.submit_commitment(matchIdFelt, commitmentFelt);
-
-      console.log('Commitment submitted, tx:', tx);
-
-      // Mark as locked
-      setIsLocked(true);
-      setTimerRunning(false);
-
-      // Notify parent
-      onCommitmentSubmitted();
-    } catch (err) {
-      console.error('Failed to submit commitment:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit commitment');
-      setIsSubmitting(false);
+    } else if (traps.filter(t => t > 0).length < 3) {
+      // Add trap to first empty slot
+      const newTraps = [...traps];
+      const emptyIdx = newTraps.findIndex(t => t === 0);
+      if (emptyIdx >= 0) newTraps[emptyIdx] = chair;
+      else return; // all 3 slots full
+      handleLoadoutChange({
+        ...localLoadout,
+        trap1: newTraps[0],
+        trap2: newTraps[1],
+        trap3: newTraps[2],
+      });
     }
-  };
+    // If 3 traps already set, ignore until one is removed
+  }, [localLoadout, isRevealing, timerDone, handleLoadoutChange]);
 
-  // Waiting state after lock-in
-  if (isLocked) {
-    return (
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <div className={styles.roundInfo}>
-            <span className={styles.roundLabel}>Round</span>
-            <span className={styles.roundNumber}>{roundNumber}</span>
-            <span className={styles.roundLabel}>/ 3</span>
-          </div>
-          <p className={styles.matchId}>Match: {matchId.slice(0, 8)}...</p>
-        </div>
+  // Timer ends — fire with COMMITTED loadout (what was on-chain at match start)
+  // Note: GameFlow uses committedLoadout for proof, not the locally changed one
+  // The local changes are cosmetic during the round unless player re-signs
+  const handleTimerEnd = useCallback(() => {
+    setTimerDone(true);
+    onRoundEnd(committedLoadout.current);
+  }, [onRoundEnd]);
 
-        <div className={styles.waitingState}>
-          <div className={styles.spinner}></div>
-          <h2 className={styles.waitingTitle}>
-            {opponentLocked ? 'Opponent Ready! 🎉' : 'Commitment Submitted'}
-          </h2>
-          <p className={styles.waitingMessage}>
-            {opponentLocked
-              ? 'Both players have committed. The round will reveal shortly.'
-              : 'Waiting for opponent to make their selection...'}
-          </p>
+  const isPlayer = playerRole === 'a' ? 'A' : 'B';
+  const myPct = playerRole === 'a' ? splitA : splitB;
+  const theirPct = playerRole === 'a' ? splitB : splitA;
 
-          <div className={styles.opponentStatus}>
-            <div className={`${styles.opponentBadge} ${opponentLocked ? styles.ready : styles.waiting}`}>
-              {opponentLocked ? '✓' : '⏳'} Opponent
-            </div>
-            <div className={`${styles.opponentBadge} ${styles.ready}`}>
-              ✓ You (committed)
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Selection UI
   return (
     <div className={styles.container}>
+
+      {/* Header row */}
       <div className={styles.header}>
-        <div className={styles.roundInfo}>
-          <span className={styles.roundLabel}>Round</span>
-          <span className={styles.roundNumber}>{roundNumber}</span>
-          <span className={styles.roundLabel}>/ 3</span>
+        <div className={styles.roundBadge}>
+          Round {roundNumber} / 3
         </div>
-        <p className={styles.matchId}>Match: {matchId.slice(0, 8)}...</p>
+        <div className={styles.matchId}>
+          #{matchId.slice(-6)}
+        </div>
       </div>
+
+      {/* Cumulative split bar */}
+      {roundNumber > 1 && (
+        <div className={styles.splitBar}>
+          <span className={styles.splitYou}>{myPct}%</span>
+          <div className={styles.splitTrack}>
+            <div
+              className={styles.splitFill}
+              style={{ width: `${myPct}%` }}
+            />
+          </div>
+          <span className={styles.splitThem}>{theirPct}%</span>
+        </div>
+      )}
 
       {/* Timer */}
       <TimerBar
-        duration={TIMER_DURATION}
-        isRunning={timerRunning && !timerComplete}
-        onComplete={handleTimerComplete}
+        duration={timerSeconds}
+        isRunning={!timerDone && !isRevealing}
+        onComplete={handleTimerEnd}
       />
 
-      {/* Selection Summary */}
+      {/* Selection summary */}
       <div className={styles.selectionSummary}>
-        <div className={`${styles.selectionItem} ${choices.position ? styles.active : ''}`}>
+        <div className={styles.selectionItem}>
           <span className={styles.selectionLabel}>Your Chair</span>
-          <span className={`${styles.selectionValue} ${styles.chair}`}>
-            {choices.position ? `⭐ ${choices.position}` : '—'}
+          <span className={styles.selectionValue}>
+            ⭐ {localLoadout.chair}
           </span>
         </div>
-        <div className={`${styles.selectionItem} ${choices.traps.length > 0 ? styles.active : ''}`}>
-          <span className={styles.selectionLabel}>Traps</span>
-          <span className={`${styles.selectionValue} ${styles.traps}`}>
-            {choices.traps.length > 0
-              ? choices.traps.map((t) => `💣${t}`).join(' ')
-              : `${3 - choices.traps.length} left`}
+        <div className={styles.selectionItem}>
+          <span className={styles.selectionLabel}>Traps Set</span>
+          <span className={styles.selectionValue}>
+            💣{localLoadout.trap1} 💣{localLoadout.trap2} 💣{localLoadout.trap3}
           </span>
         </div>
       </div>
 
-      {/* Chair Grid */}
+      {/* Chair Grid — always visible */}
       <div className={styles.gameArea}>
         <ChairGrid
-          choices={choices}
+          chair={localLoadout.chair}
+          traps={[localLoadout.trap1, localLoadout.trap2, localLoadout.trap3]}
           onSelectChair={handleSelectChair}
           onToggleTrap={handleToggleTrap}
-          disabled={isLocked || isSubmitting}
+          disabled={isRevealing || timerDone}
           revealMode={false}
         />
       </div>
 
-      {/* Error display */}
-      {error && (
-        <div className={styles.errorMessage}>
-          {error}
-          <button className={styles.retryButton} onClick={() => setError(null)}>
-            Dismiss
-          </button>
+      {/* Reveal overlay — shown on top of board, not replacing it */}
+      {isRevealing && (
+        <div className={styles.revealOverlay}>
+          <div className={styles.spinner} />
+          <p className={styles.revealStatus}>{revealStatus || 'Calculating...'}</p>
         </div>
       )}
 
-      {/* Lock In Button */}
-      <button
-        className={`${styles.lockInButton} ${isSubmitting
-            ? styles.loading
-            : isValid
-              ? styles.enabled
-              : styles.disabled
-          }`}
-        onClick={handleLockIn}
-        disabled={!isValid || isSubmitting}
-      >
-        {isSubmitting
-          ? 'Submitting...'
-          : isValid
-            ? '🔒 Lock In'
-            : `Select chair + ${3 - choices.traps.length} trap${3 - choices.traps.length !== 1 ? 's' : ''}`}
-      </button>
+      {/* NO lock-in button — timer drives everything */}
     </div>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
 
 import Header from "@/components/Header";
-import GameFlow from "@/components/GameFlow";
 import "./globals.css";
 import styles from "./page.module.css";
+import dynamic from 'next/dynamic';
+
+const GameFlow = dynamic(() => import('@/components/GameFlow'), { ssr: false });
 
 export default function Home() {
   return (

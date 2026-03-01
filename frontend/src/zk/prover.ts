@@ -1,275 +1,186 @@
 /**
  * ZK Proof Prover for Last Chair Game
- * 
- * This module handles in-browser proof generation using Noir and Barretenberg.
- * The proof verifies that a player knows a valid position and trap configuration
- * without revealing them.
- * 
- * Circuit Details:
- * - Private inputs: position, trap1, trap2, trap3, salt
- * - Public input: public_hash (computed from commitment + revealed values)
- * - Validates: position in 1-12, traps in 1-12, no duplicates, position != traps
- * 
- * Note: The circuit uses Pedersen hash (not Poseidon as originally specified).
- * 
- * Usage:
- * 1. Call initializeProver() at app startup
- * 2. Use computeCommitmentAndHash() to compute commitment
- * 3. Use generateProof() to create proof
- * 4. Use verifyProof() to verify locally before submitting
+ *
+ * Circuit: Noir 1.0.0-beta.1, bb 0.67.0, Garaga 0.15.5
+ * Hash: pedersen_hash (std::hash::pedersen_hash in Noir)
+ * Public input: single felt — pedersen(commitment, chair, trap1, trap2, trap3)
+ *
+ * proof_with_hints format sent to contract:
+ *   [...proof_felts, chair, trap1, trap2, trap3]
+ * Contract reads last 4 elements as revealed values.
  */
 
-import { Barretenberg } from '@aztec/bb.js';
+import { Barretenberg, Fr } from '@aztec/bb.js';
+import { Noir } from '@noir-lang/noir_js';
 
-// State
+// ─── State ────────────────────────────────────────────────────────────────────
+
 let bbInstance: Barretenberg | null = null;
+let noirInstance: Noir | null = null;
 let isInitialized = false;
+let circuitJson: any = null;
 
-/**
- * Initialize the Barretenberg backend
- * This prepares the cryptographic primitives needed for proof generation
- */
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
 export async function initializeProver(): Promise<void> {
-  if (isInitialized) {
+  if (isInitialized) return;
+
+  // Never run during SSR/prerender
+  if (typeof window === 'undefined') {
+    isInitialized = true;
     return;
   }
 
   try {
-    // Initialize Barretenberg WASM
-    bbInstance = await Barretenberg.new();
+    bbInstance = await Barretenberg.new({ threads: 4 });
+    // Try loading compiled circuit
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = await (async () => { try { return require('@/circuits/last_chair.json'); } catch { return null; } })();
+      if (mod) {
+        circuitJson = mod.default ?? mod;
+        const { Noir: NoirClass } = await import('@noir-lang/noir_js');
+        noirInstance = new NoirClass(circuitJson);
+        console.log('ZK Prover initialized — full mode');
+      } else {
+        console.info('No circuit found — simulation mode');
+      }
+    } catch (e) {
+      console.warn('Circuit JSON not found — running in simulation mode:', e);
+    }
     isInitialized = true;
-    console.log('ZK Prover initialized successfully');
   } catch (error) {
-    console.warn('Failed to initialize Barretenberg:', error);
-    // Continue in simulation mode
+    console.warn('Barretenberg init failed — simulation mode:', error);
     isInitialized = true;
   }
 }
 
-/**
- * Generate a proof for the player's position and trap configuration
- * 
- * This creates a zero-knowledge proof that proves knowledge of:
- * - A valid position (1-12)
- * - Three unique traps (1-12, not equal to position)
- * - A salt value
- * 
- * Without revealing the actual values.
- * 
- * @param position - Player's chosen position (1-12)
- * @param trap1 - First trap position (1-12)
- * @param trap2 - Second trap position (1-12)
- * @param trap3 - Third trap position (1-12)
- * @param salt - Random salt used in commitment
- * @param publicHash - The public hash computed from commitment + revealed values
- * @returns Proof result with proof bytes and public inputs
- */
-export async function generateProof(
-  position: number,
-  trap1: number,
-  trap2: number,
-  trap3: number,
-  salt: number,
-  publicHash: bigint
-): Promise<ProofResult> {
-  if (!isInitialized) {
-    throw new Error('Prover not initialized. Call initializeProver() first.');
-  }
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-  // Validate inputs
-  validateInputs(position, trap1, trap2, trap3);
-
-  // If no Barretenberg instance (initialization failed), use simulation
-  if (!bbInstance) {
-    return simulateProof(position, trap1, trap2, trap3, salt, publicHash);
-  }
-
-  try {
-    // The actual circuit proof generation would go here
-    // For now, we use a simulation that mimics the proof structure
-    // In production, this would call: await bbInstance.generateProof(circuit, inputs)
-    
-    // For Ultra Honk proofs, the structure is different
-    // We'll use a placeholder that simulates proof generation
-    const simulatedProof = await createSimulatedProof(
-      position, trap1, trap2, trap3, salt, publicHash
-    );
-
-    return {
-      proof: simulatedProof,
-      publicInputs: [publicHash.toString()],
-      isSimulation: true,
-    };
-  } catch (error) {
-    console.error('Proof generation failed:', error);
-    // Fall back to simulation
-    return simulateProof(position, trap1, trap2, trap3, salt, publicHash);
-  }
+export interface ProveInput {
+  chair: number;
+  trap1: number;
+  trap2: number;
+  trap3: number;
+  salt: bigint;
+  commitment: bigint;  // pedersen(chair, trap1, trap2, trap3, salt) — stored on-chain
 }
-
-/**
- * Verify a proof locally before submitting to the contract
- * 
- * @param proof - The proof bytes
- * @param publicInputs - The public inputs (public hash)
- * @returns True if proof is valid
- */
-export async function verifyProof(
-  proof: Uint8Array,
-  publicInputs: string[]
-): Promise<boolean> {
-  if (!isInitialized) {
-    throw new Error('Prover not initialized. Call initializeProver() first.');
-  }
-
-  // If no Barretenberg instance, accept in simulation mode
-  if (!bbInstance) {
-    return true;
-  }
-
-  try {
-    // Actual verification would use bbInstance.verifyProof()
-    // For now, we do basic validation
-    if (!proof || proof.length === 0) {
-      return false;
-    }
-    if (!publicInputs || publicInputs.length === 0) {
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Proof verification failed:', error);
-    return false;
-  }
-}
-
-/**
- * Clean up resources
- */
-export async function destroyProver(): Promise<void> {
-  if (bbInstance) {
-    // Barretenberg cleanup if needed
-    bbInstance = null;
-  }
-  isInitialized = false;
-}
-
-// ============================================================================
-// Validation
-// ============================================================================
-
-function validateInputs(
-  position: number,
-  trap1: number,
-  trap2: number,
-  trap3: number
-): void {
-  // Validate position range
-  if (position < 1 || position > 12) {
-    throw new Error(`Position must be between 1 and 12, got ${position}`);
-  }
-
-  // Validate trap ranges
-  [trap1, trap2, trap3].forEach((trap, i) => {
-    if (trap < 1 || trap > 12) {
-      throw new Error(`Trap${i + 1} must be between 1 and 12, got ${trap}`);
-    }
-  });
-
-  // Validate no duplicate traps
-  const traps = [trap1, trap2, trap3];
-  if (new Set(traps).size !== traps.length) {
-    throw new Error('Traps must be unique');
-  }
-
-  // Validate position is not on a trap
-  if (traps.includes(position)) {
-    throw new Error('Position cannot be on a trap');
-  }
-}
-
-// ============================================================================
-// Simulation Mode (for testing without compiled circuit)
-// ============================================================================
-
-async function createSimulatedProof(
-  position: number,
-  trap1: number,
-  trap2: number,
-  trap3: number,
-  salt: number,
-  publicHash: bigint
-): Promise<Uint8Array> {
-  // Create a deterministic proof structure
-  // In production, this would be replaced by actual proof generation via Noir/Barretenberg
-  
-  const proofData = [
-    position,
-    trap1,
-    trap2,
-    trap3,
-    salt,
-    Number(publicHash % BigInt(256)),
-    Number((publicHash >> 8n) % BigInt(256)),
-    Number((publicHash >> 16n) % BigInt(256)),
-  ];
-
-  const proof = new Uint8Array(64);
-  
-  // Fill with deterministic but seemingly random bytes
-  let seed = position * 10000 + trap1 * 1000 + trap2 * 100 + trap3 * 10 + salt;
-  for (let i = 0; i < 64; i++) {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    proof[i] = seed % 256;
-  }
-
-  return proof;
-}
-
-function simulateProof(
-  position: number,
-  trap1: number,
-  trap2: number,
-  trap3: number,
-  salt: number,
-  publicHash: bigint
-): ProofResult {
-  const simulatedProof = new Uint8Array(64);
-  
-  // Fill with deterministic bytes based on inputs
-  let seed = position * 10000 + trap1 * 1000 + trap2 * 100 + trap3 * 10 + salt;
-  for (let i = 0; i < 64; i++) {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    simulatedProof[i] = seed % 256;
-  }
-
-  return {
-    proof: simulatedProof,
-    publicInputs: [publicHash.toString()],
-    isSimulation: true,
-  };
-}
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface ProofResult {
-  proof: Uint8Array;
+  // Felt252 strings ready to pass to submitReveal as proof_with_hints
+  // Format: [...proof_felts, chair, trap1, trap2, trap3]
+  proofFelts: string[];
   publicInputs: string[];
   isSimulation: boolean;
 }
 
-/**
- * Check if prover is initialized and ready
- */
+// ─── Main export ─────────────────────────────────────────────────────────────
+
+export async function generateProof(input: ProveInput): Promise<ProofResult> {
+  if (!isInitialized) throw new Error('Call initializeProver() first');
+
+  validateInput(input);
+
+  if (noirInstance && bbInstance && circuitJson) {
+    return generateRealProof(input);
+  }
+  return generateSimulatedProof(input);
+}
+
+// ─── Real proof (when circuit JSON is available) ─────────────────────────────
+
+async function generateRealProof(input: ProveInput): Promise<ProofResult> {
+  try {
+    const { UltraHonkBackend } = await import('@aztec/bb.js');
+    const backend = new UltraHonkBackend(circuitJson);
+
+    // Noir circuit inputs — all as decimal strings
+    const circuitInputs = {
+      position: input.chair.toString(),
+      trap1: input.trap1.toString(),
+      trap2: input.trap2.toString(),
+      trap3: input.trap3.toString(),
+      salt: input.salt.toString(),
+      public_hash: input.commitment.toString(),
+    };
+
+    const { witness } = await noirInstance!.execute(circuitInputs);
+    const { proof, publicInputs } = await backend.generateProof(witness);
+
+    // Convert proof bytes to felt252 strings
+    const proofFelts = Array.from(proof).map(b => b.toString());
+
+    // Append revealed values — contract reads these from end of array
+    const withHints = [
+      ...proofFelts,
+      input.chair.toString(),
+      input.trap1.toString(),
+      input.trap2.toString(),
+      input.trap3.toString(),
+    ];
+
+    return {
+      proofFelts: withHints,
+      publicInputs: publicInputs.map(p => p.toString()),
+      isSimulation: false,
+    };
+  } catch (err) {
+    console.error('Real proof generation failed, falling back to simulation:', err);
+    return generateSimulatedProof(input);
+  }
+}
+
+// ─── Simulated proof (until circuit JSON is bundled) ─────────────────────────
+
+function generateSimulatedProof(input: ProveInput): ProofResult {
+  // Deterministic fake proof bytes
+  const proofBytes: string[] = [];
+  let seed = input.chair * 10000 + input.trap1 * 1000 + input.trap2 * 100 + input.trap3;
+  for (let i = 0; i < 64; i++) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    proofBytes.push((seed % 256).toString());
+  }
+
+  // Append hints — the 4 values contract reads
+  const withHints = [
+    ...proofBytes,
+    input.chair.toString(),
+    input.trap1.toString(),
+    input.trap2.toString(),
+    input.trap3.toString(),
+  ];
+
+  return {
+    proofFelts: withHints,
+    publicInputs: [input.commitment.toString()],
+    isSimulation: true,
+  };
+}
+
+// ─── Validation ──────────────────────────────────────────────────────────────
+
+function validateInput(input: ProveInput): void {
+  const { chair, trap1, trap2, trap3 } = input;
+  if (chair < 1 || chair > 12) throw new Error(`Chair must be 1-12, got ${chair}`);
+  for (const [name, val] of [['trap1', trap1], ['trap2', trap2], ['trap3', trap3]] as const) {
+    if (val < 1 || val > 12) throw new Error(`${name} must be 1-12, got ${val}`);
+  }
+  if (trap1 === trap2 || trap1 === trap3 || trap2 === trap3) throw new Error('Traps must be unique');
+  if ([trap1, trap2, trap3].includes(chair)) throw new Error('Chair cannot be a trap');
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 export function isProverReady(): boolean {
   return isInitialized;
 }
 
-/**
- * Check if prover is running in full mode (with circuit)
- */
 export function isFullProverMode(): boolean {
-  return bbInstance !== null;
+  return noirInstance !== null && bbInstance !== null;
+}
+
+export async function destroyProver(): Promise<void> {
+  bbInstance = null;
+  noirInstance = null;
+  isInitialized = false;
 }
